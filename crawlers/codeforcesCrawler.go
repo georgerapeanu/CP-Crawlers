@@ -1,13 +1,8 @@
 package crawlers
 
-//TODO time zone stuff i guess
-
 import (
-	"errors"
-	"fmt"
 	"strings"
 
-	"net/http"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -17,7 +12,8 @@ import (
 type CodeforcesCrawler struct {
 }
 
-func (crawler CodeforcesCrawler) GetSubmissions(handle string,
+func (crawler CodeforcesCrawler) GetSubmissions(
+	handle string,
 	taskLink string,
 	beginningTime time.Time) ([]generic.Submission, error) {
 	ans := make([]generic.Submission, 0)
@@ -29,8 +25,7 @@ func (crawler CodeforcesCrawler) ParseSubmission(submissionLink string) (generic
 
 	ans := generic.Submission{}
 
-	res, err := http.Get(submissionLink)
-
+	res, err := generic.HttpClient.Get(submissionLink)
 	if err != nil {
 		return ans, err
 	}
@@ -38,7 +33,7 @@ func (crawler CodeforcesCrawler) ParseSubmission(submissionLink string) (generic
 	defer res.Body.Close()
 
 	if res.StatusCode != 200 {
-		return ans, errors.New("Error: GET submission link return NON-ACCEPTED response")
+		return ans, generic.ErrNon200Response
 	}
 
 	doc, err := goquery.NewDocumentFromReader(res.Body)
@@ -64,7 +59,10 @@ func (crawler CodeforcesCrawler) ParseSubmission(submissionLink string) (generic
 	ans.Language = strings.TrimSpace(goquery.NewDocumentFromNode(infoRow.Children().Get(3)).Text())
 
 	//getting submission time
-	ans.SubmissionTime, err = time.Parse(timeLayout, strings.TrimSpace(goquery.NewDocumentFromNode(infoRow.Children().Get(7)).Text()))
+	timeLocation := time.FixedZone("GMT+3", +3*60*60)
+
+	timeString := strings.TrimSpace(goquery.NewDocumentFromNode(infoRow.Children().Get(7)).Text())
+	ans.SubmissionTime, err = time.ParseInLocation(timeLayout, timeString, timeLocation)
 	if err != nil {
 		return ans, err
 	}
@@ -86,7 +84,5 @@ func (crawler CodeforcesCrawler) ParseSubmission(submissionLink string) (generic
 		ans.Task = name
 	})
 
-	fmt.Printf("%+v\n", ans)
-	//fmt.Println(taskData.Html())
 	return ans, nil
 }
