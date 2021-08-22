@@ -7,8 +7,12 @@ import (
 )
 
 type GenericCrawler interface {
-	GetSubmissions(handle string, //handle of the user
+	GetSubmissions(handle string,
+		beginTime time.Time, //the begin time point
+		endTime time.Time) ([]generic.Submission,err error) // the end time point
+	GetSubmissionsForTask(handle string, //handle of the user
 		taskLink string, //link to the task
-		beginningTime time.Time) ([]generic.Submission,err error) //the time point from which we want to extract data
+		beginTime time.Time, //the begin time point
+		endTime time.Time) ([]generic.Submission,err error) // the end time point
 	ParseSubmission(submissionLink string) (generic.Submission,err error)
 }
