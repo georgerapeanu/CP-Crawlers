@@ -1,10 +1,14 @@
 package crawlers
 
+///TODO maybe investigate the status ajax
+///for now to get the submissions between 2 timestamps you have to fetch all submissions
+///also write tests
+
 import (
 	"errors"
-	"fmt"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/georgerapeanu/CP-Crawlers/generic"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -18,11 +22,23 @@ var CodeforcesCrawlerErrorExtractingLastPage = errors.New("CodeforcesCrawler: Er
 type CodeforcesCrawler struct {
 }
 
+func myUrlJoin(urlString, subroute string) (string, error) {
+	u, err := url.Parse(urlString)
+	if err != nil {
+		return "", err
+	}
+	u.Path = path.Join(u.Path, subroute)
+	return u.String(), nil
+}
+
 func (crawler CodeforcesCrawler) GetSubmissions(handle string,
 	beginTime time.Time,
 	endTime time.Time) ([]generic.Submission, error) {
 
-	submissionTableLink := path.Join("https://codeforces.com/submissions", handle)
+	submissionTableLink, err := myUrlJoin("https://codeforces.com/submissions", handle)
+	if err != nil {
+		return make([]generic.Submission, 0), err
+	}
 
 	return crawler.ParseSubmissionTable(submissionTableLink, beginTime, endTime)
 }
@@ -30,8 +46,24 @@ func (crawler CodeforcesCrawler) GetSubmissions(handle string,
 func (crawler CodeforcesCrawler) GetSubmissionsForTask(
 	handle string,
 	taskLink string,
-	beginningTime time.Time) ([]generic.Submission, error) {
-	ans := make([]generic.Submission, 0)
+	beginTime time.Time,
+	endTime time.Time) ([]generic.Submission, error) {
+	ans, err := crawler.GetSubmissions(handle, beginTime, endTime)
+
+	if err != nil {
+		return ans, err
+	}
+
+	tmp := make([]generic.Submission, 0)
+
+	for _, submission := range ans {
+		if submission.TaskLink != taskLink {
+			continue
+		}
+		tmp = append(tmp, submission)
+	}
+
+	ans = tmp
 
 	return ans, nil
 }
@@ -88,11 +120,11 @@ func (crawler CodeforcesCrawler) ParseSubmissionPage(submissionPageLink string) 
 		}
 		ans = append(ans, submission)
 	})
-	fmt.Println(0)
+
 	return ans, err
 }
 
-func (crawler CodeforcesCrawler) ParseSubmissionTable(tableLink string, beginningTime time.Time, endTime time.Time) ([]generic.Submission, error) {
+func (crawler CodeforcesCrawler) ParseSubmissionTable(tableLink string, beginTime time.Time, endTime time.Time) ([]generic.Submission, error) {
 	res, err := generic.HttpClient.Get(tableLink)
 	ans := make([]generic.Submission, 0)
 	if err != nil {
@@ -112,7 +144,6 @@ func (crawler CodeforcesCrawler) ParseSubmissionTable(tableLink string, beginnin
 
 	doc.Find(".pagination").Each(func(i int, selection *goquery.Selection) {
 		if i == 1 {
-			fmt.Println("here")
 			pagination := goquery.NewDocumentFromNode(selection.Children().Get(0))
 			maxPageLiSelection := goquery.NewDocumentFromNode(pagination.Children().Get(pagination.Children().Length() - 2))
 			maxPageSpanSelection := goquery.NewDocumentFromNode(maxPageLiSelection.Children().Get(0))
@@ -134,7 +165,15 @@ func (crawler CodeforcesCrawler) ParseSubmissionTable(tableLink string, beginnin
 
 	for r-l > 1 {
 		mid := int((l + r) / 2)
-		midPageString := path.Join(path.Join(tableLink, "page"), strconv.Itoa(mid))
+		var pagesString, midPageString string
+		pagesString, err = myUrlJoin(tableLink, "page")
+		if err != nil {
+			return ans, err
+		}
+		midPageString, err = myUrlJoin(pagesString, strconv.Itoa(mid))
+		if err != nil {
+			return ans, err
+		}
 		var tmp []generic.Submission
 		tmp, err = crawler.ParseSubmissionPage(midPageString)
 		if err != nil {
@@ -144,9 +183,9 @@ func (crawler CodeforcesCrawler) ParseSubmissionTable(tableLink string, beginnin
 			panic("wtf")
 		}
 		if tmp[len(tmp)-1].SubmissionTime.After(endTime) {
-			left = mid
+			l = mid
 		} else {
-			right = mid
+			r = mid
 		}
 	}
 	if r > right {
@@ -160,7 +199,15 @@ func (crawler CodeforcesCrawler) ParseSubmissionTable(tableLink string, beginnin
 
 	for r-l > 1 {
 		mid := int((l + r) / 2)
-		midPageString := path.Join(path.Join(tableLink, "page"), strconv.Itoa(mid))
+		var pagesString, midPageString string
+		pagesString, err = myUrlJoin(tableLink, "page")
+		if err != nil {
+			return ans, err
+		}
+		midPageString, err = myUrlJoin(pagesString, strconv.Itoa(mid))
+		if err != nil {
+			return ans, err
+		}
 		var tmp []generic.Submission
 		tmp, err = crawler.ParseSubmissionPage(midPageString)
 		if err != nil {
@@ -169,10 +216,10 @@ func (crawler CodeforcesCrawler) ParseSubmissionTable(tableLink string, beginnin
 		if len(tmp) == 0 {
 			panic("wtf")
 		}
-		if tmp[0].SubmissionTime.Before(beginningTime) {
-			right = mid
+		if tmp[0].SubmissionTime.Before(beginTime) {
+			r = mid
 		} else {
-			left = mid
+			l = mid
 		}
 	}
 
@@ -184,11 +231,24 @@ func (crawler CodeforcesCrawler) ParseSubmissionTable(tableLink string, beginnin
 
 	for i := startPage; i <= endPage; i++ {
 		var submissions []generic.Submission
-		submissions, err = crawler.ParseSubmissionPage(path.Join(path.Join(tableLink, "page"), strconv.Itoa(i)))
+		var pagesString, submissionPageString string
+		pagesString, err = myUrlJoin(tableLink, "page")
+		if err != nil {
+			return ans, err
+		}
+		submissionPageString, err = myUrlJoin(pagesString, strconv.Itoa(i))
+		submissions, err = crawler.ParseSubmissionPage(submissionPageString)
 		if err != nil {
 			return ans, err
 		}
 		ans = append(ans, submissions...)
+	}
+
+	for len(ans) > 0 && ans[0].SubmissionTime.After(endTime) {
+		ans = ans[1:]
+	}
+	for len(ans) > 0 && ans[len(ans)-1].SubmissionTime.Before(beginTime) {
+		ans = ans[:len(ans)-1]
 	}
 
 	return ans, nil

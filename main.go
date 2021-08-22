@@ -21,7 +21,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(crawler.ParseSubmissionTable("https://codeforces.com/submissions/georgerapeanu", startTime, endTime))
+	fmt.Println(crawler.GetSubmissionsForTask("georgerapeanu", "https://codeforces.com/contest/467/problem/D", startTime, endTime))
 	//fmt.Println(crawler.ParseSubmissionPage("https://codeforces.com/submissions/georgerapeanu"))
 	fmt.Println("ok")
 }
